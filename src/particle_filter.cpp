@@ -33,7 +33,7 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
    * NOTE: Consult particle_filter.h for more information about this method 
    *   (and others in this file).
    */
-  num_particles = 10;  // TODO: Set the number of particles
+  num_particles = 50;  // TODO: Set the number of particles
   Particle my_particle;
 
   // Create normal distribution for x, y and thtea
@@ -72,6 +72,27 @@ void ParticleFilter::prediction(double delta_t, double std_pos[],
    *  http://en.cppreference.com/w/cpp/numeric/random/normal_distribution
    *  http://www.cplusplus.com/reference/random/default_random_engine/
    */
+  // Variables to store previous coordinates
+  double x_0, y_0, theta_0;
+
+  // Create noise process for x, y and thtea
+  std::default_random_engine gen;
+  normal_distribution<double> noise_x(0, std_pos[0]);
+  normal_distribution<double> noise_y(0, std_pos[1]);
+  normal_distribution<double> noise_theta(0, std_pos[2]);
+
+  for (int i = 0; i < num_particles; ++i) {
+
+    x_0 = particles[i].x;
+    y_0 = particles[i].y;
+    theta_0 = particles[i].theta;
+
+    particles[i].x = x_0 + ( sin(theta_0 + yaw_rate*delta_t ) - sin(theta_0) )*velocity/yaw_rate + noise_x(gen);
+    particles[i].y = y_0 + ( cos(theta_0) - cos(theta_0 + yaw_rate*delta_t ) )*velocity/yaw_rate + noise_y(gen);
+    particles[i].theta = theta_0 + yaw_rate*delta_t + noise_theta(gen);    
+    //cout << "Prediction - id = " << particles[i].id << velocity << endl;
+  }
+  
 
 }
 
