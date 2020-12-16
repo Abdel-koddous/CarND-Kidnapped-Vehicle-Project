@@ -90,7 +90,7 @@ void ParticleFilter::prediction(double delta_t, double std_pos[],
     particles[i].x = x_0 + ( sin(theta_0 + yaw_rate*delta_t ) - sin(theta_0) )*velocity/yaw_rate + noise_x(gen);
     particles[i].y = y_0 + ( cos(theta_0) - cos(theta_0 + yaw_rate*delta_t ) )*velocity/yaw_rate + noise_y(gen);
     particles[i].theta = theta_0 + yaw_rate*delta_t + noise_theta(gen);    
-    //cout << "Prediction - id = " << particles[i].id << velocity << endl;
+    cout << "Prediction - id = " << particles[i].id << velocity << endl;
   }
   
 
@@ -106,6 +106,31 @@ void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted,
    *   probably find it useful to implement this method and use it as a helper 
    *   during the updateWeights phase.
    */
+  
+  // for each measurment/observation  pick the nearest predicted measurment 
+  // then assign that landmark to the measurment
+
+  for (uint obs_index = 1; obs_index < observations.size(); obs_index++) {
+
+    double minimum_dist = dist( observations[obs_index].x, observations[obs_index].y, predicted[0].x, predicted[0].y );
+    int minimum_dist_index = 0;
+
+    for (uint i = 0; i < predicted.size(); i++) {
+
+      double distance_to_obs = dist( observations[obs_index].x, observations[obs_index].y, predicted[i].x, predicted[i].y );
+
+      if (distance_to_obs < minimum_dist) {
+        minimum_dist = distance_to_obs;
+        minimum_dist_index = obs_index;
+      }
+
+    }
+
+    observations[obs_index].id = predicted[minimum_dist_index].id;
+
+  }  
+
+
 
 }
 
@@ -126,6 +151,103 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
    *   (look at equation 3.33) http://planning.cs.uiuc.edu/node99.html
    */
 
+  double sigma_xx = std_landmark[0]*std_landmark[0];
+  double sigma_yy = std_landmark[1]*std_landmark[1];
+  double normalization_factor = 1 / (2 * M_PI * std_landmark[0] * std_landmark[1]);
+
+
+  int total_landmarks = map_landmarks.landmark_list.size();
+
+  vector<LandmarkObs> observations_local = observations;
+  // For each particule find landmarks that are within the sensor_range
+  // and predict measurements corresponding to those landmarks
+  vector< vector<LandmarkObs> > predicted_measurements(num_particles);
+
+  for (int particle_index = 0; particle_index < num_particles; particle_index++) {
+
+    int landmarks_in_range = 0;
+    double distance_to_landmark;
+
+    for ( int landmark_index = 0; landmark_index < total_landmarks; landmark_index++ ) {
+
+      double landmark_x = map_landmarks.landmark_list[landmark_index].x_f;
+      double landmark_y = map_landmarks.landmark_list[landmark_index].y_f;
+
+      distance_to_landmark = dist( particles[particle_index].x, particles[particle_index].y, landmark_x, landmark_y );
+
+      if ( distance_to_landmark <= sensor_range ) {
+        landmarks_in_range++;
+        particles[particle_index].associations.push_back(landmark_index);
+        
+        // convert landmark coordinates from global frame to vehicle frame
+        double landmark_x_local = landmark_x*cos(particles[particle_index].theta) + landmark_y*sin(particles[particle_index].theta) - particles[particle_index].x;
+        double landmark_y_local = -landmark_x*sin(particles[particle_index].theta) + landmark_y*cos(particles[particle_index].theta) - particles[particle_index].y;
+
+        LandmarkObs landmark_obs = {landmark_index, landmark_x_local, landmark_y_local };
+
+        predicted_measurements[particle_index].push_back(landmark_obs);
+      }
+
+
+      
+    }
+    // All landmarks that could be seen by the current particule are added
+    // predicted measurments for these landmars were computed
+    // moving to data association ( predicted measurments <-> actual observations )
+    dataAssociation( predicted_measurements[particle_index], observations_local );
+
+    // here observations_local are assigned to their corresponding landmark
+    // update weights for current particle
+    // particles[particle_index].weight = 1;
+    double weight = 1.0;
+
+    for (uint obs_index = 0; obs_index < observations_local.size();  obs_index++) {
+
+      double mu_x;
+      double mu_y;
+
+      // find predicted measurment corresponding to the current observation
+      for (uint i = 0; i < predicted_measurements[particle_index].size(); i++) {
+
+        if (observations_local[obs_index].id == predicted_measurements[particle_index][i].id) {
+          mu_x = predicted_measurements[particle_index][0].x;
+          mu_y = predicted_measurements[particle_index][0].y;
+          break;
+        }
+      }
+
+      double dx_2 = pow( observations_local[obs_index].x - mu_x , 2 );
+      double dy_2 = pow( observations_local[obs_index].y - mu_y , 2 );
+
+      weight *= exp( -1/2*( (sigma_xx*dx_2) + (sigma_yy*dy_2) ) ) * normalization_factor;
+
+    }
+
+    particles[particle_index].weight = weight;
+    
+    // DEBUG
+    cout << "Landmarks in range for particule " << particle_index << " => " << landmarks_in_range << endl;
+
+
+  }
+
+  cout << "Observation vector size => " << observations.size() <<
+  " - Map landmarks vector size => " << total_landmarks << endl;
+ 
+  // compute predicted measurement for each particule ( for each landmark)
+  // use this pridicted measurment in the dataAssociation phase
+
+
+
+
+  // updating the weight of each particle
+  // for each particule we multiply for each measurement 
+  for ( int i = 0; i < num_particles; i++ ) {
+
+    particles[i].weight = 1;
+
+  }
+  
 }
 
 void ParticleFilter::resample() {
@@ -135,6 +257,7 @@ void ParticleFilter::resample() {
    * NOTE: You may find std::discrete_distribution helpful here.
    *   http://en.cppreference.com/w/cpp/numeric/random/discrete_distribution
    */
+
 
 }
 
